@@ -7,6 +7,7 @@ import os
 import xml.etree.ElementTree as ET
 import logging
 import json
+from pipline import evaluate
 
 LABELS = {"PID": "pid", "crack": "crack", "diode": "diode",
           "hotspot": "hotspot", "shelter": "shelter",
@@ -59,8 +60,8 @@ def audit_annotations(dataset_dir):
 我们先判断这些问题是否集中在 超出1～2像素，再决定如何处理。390是异常图片记录数，不一定等于异常框数。'''
 
 
-def draw_record(record, save_path):
-    save_dir = Path(save_path)
+def draw_record(record, save_dir):
+    save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     img_path = record['image_path']
     image = Image.open(img_path).convert('RGB')  # 统一输入通道数
@@ -73,7 +74,19 @@ def draw_record(record, save_path):
     target_dir = save_dir / Path(img_path).name
     if target_dir.resolve() == Path(img_path).resolve():
         raise ValueError('输出路径不能与原图相同')
-    image.save(Path(save_path) / f"{Path(img_path).name}")
+    image.save(Path(save_dir) / f"{Path(img_path).name}")
+
+
+def draw_box(img_path, box, save_path):
+    save_path = Path(save_path)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    image = Image.open(img_path).convert('RGB')  # 统一输入通道数
+
+    draw = ImageDraw.Draw(image)
+    xmin, ymin, xmax, ymax = box
+    draw.rectangle((xmin, ymin, xmax, ymax), outline='red', width=4)
+    image.save(Path(save_path))
+
 
 
 def split_records(records, train_ratio=0.7, val_ratio=0.15, seed=42):
@@ -253,8 +266,57 @@ def export_gt_crops(records, out_dir):
             crop_cnt += 1
     return crop_cnt
 
+def export_non_defect_crop(image_path, box, out_path):
+    image = Image.open(image_path).convert('RGB')
+    xmin, ymin, xmax, ymax = box
+    width, height = image.size
+    xmin = max(0, xmin)
+    ymin = max(0, ymin)
+    xmax = min(width, xmax)
+    ymax = min(height, ymax)
+    if xmin >= xmax or ymin >= ymax:
+        return False
+    xmin, ymin, xmax, ymax = floor(xmin), floor(ymin), ceil(xmax), ceil(ymax)
+    im_crop = image.crop((xmin, ymin, xmax, ymax))
+    crop_path = Path(out_path)
+    crop_path.parent.mkdir(parents=True, exist_ok=True)
+    im_crop.save(crop_path)
+
+    return True
+
+def export_candidate_crops(records, predictions, out_dir):
+    train_saved_cnt, val_saved_cnt = 0, 0
+    for record in records:
+        image_id = record['id']
+        image_path = record['image_path']
+        split = record['split']
+        objects = record.get('objects', [])
+        for idx, prediction in enumerate(predictions[image_id]):
+            iou, gt_coverage = evaluate.measure_candidate_overlap(prediction["box"], objects)
+            if iou == gt_coverage == 0.0:
+                exported = export_non_defect_crop(image_path, prediction["box"], f'{out_dir}/{split}/{image_id}_pred_{idx}.jpg')
+                if exported:
+                    draw_box(image_path, prediction["box"], f'{out_dir}/{split}/raw/{image_id}_pred_{idx}.jpg')
+                if exported and split == 'train':
+                    train_saved_cnt += 1
+                elif exported and split == 'val':
+                    val_saved_cnt += 1
+    print(f'{train_saved_cnt=}, {val_saved_cnt=}')
+    return train_saved_cnt + val_saved_cnt
 
 
+
+
+'''
+要求：
+1. 遍历图片及其候选框，复用 measure_candidate_overlap，只导出两项都为 0 的框。
+2. 从原图裁剪，转为 RGB，不能裁剪带红绿框的可视化图片。
+3. 参考 export_gt_crops：限制坐标范围、左上取 floor、右下取 ceil，跳过无效框。
+4. 保存到独立的待检查目录：output/candidate_review/train/图片ID_pred_候选序号.jpg
+   output/candidate_review/val/图片ID_pred_候选序号.jpg
+5. 返回实际保存数量，分别打印 train、val 的结果。若没有无效框，应是 3 张和 18 张。
+先不要放入分类数据的 non_defect 目录。导出后检查这些裁剪图，确认哪些确实不含缺陷，再决定是否作为非缺陷样本。
+'''
 
 
 

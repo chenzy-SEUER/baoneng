@@ -43,6 +43,7 @@ def predict_records(
         json.dump(predictions, f, ensure_ascii=False, indent=2)
     return predictions
 
+#save_path 是完整路径xx/xx.jpg
 def draw_prediction(record, predictions, save_path):
     image_path = record['image_path']
     image_id = record['id']

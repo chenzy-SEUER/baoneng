@@ -24,26 +24,6 @@ def box_iou(box1, box2):
 
     return intersection / union if union > 0 else 0.0
 
-def box_iou2(box1, box2):
-    """输入两个 xyxy 框(obj, pred)，返回 IoU。"""
-    # 交集的左上角、右下角
-    x1 = max(box1[0], box2[0])
-    y1 = max(box1[1], box2[1])
-    x2 = min(box1[2], box2[2])
-    y2 = min(box1[3], box2[3])
-
-    # 不相交时，交集宽或高为 0
-    inter_w = max(0, x2 - x1)
-    inter_h = max(0, y2 - y1)
-    intersection = inter_w * inter_h
-
-    area1 = max(0, box1[2] - box1[0]) * max(0, box1[3] - box1[1])
-    area2 = max(0, box2[2] - box2[0]) * max(0, box2[3] - box2[1])
-
-    union = area1 + area2 - intersection
-
-    return intersection / union if union > 0 else 0.0
-
 def gt_coverage(gt_box, pred_box):
     """预测框覆盖真实框的面积比例：交集面积 / 真实框面积。"""
     area = max(0, gt_box[2] - gt_box[0]) * max(0, gt_box[3] - gt_box[1])
@@ -109,6 +89,27 @@ def evaluate_recall(records, predictions, iou_threshold=0.5, vis_dir=None,
 
     return result
 
+def measure_candidate_overlap(pred_box, objects):
 
+    max_iou,max_gt_coverage = 0.0, 0.0
+    for obj in objects:
+        iou = box_iou(pred_box, obj['box'])
+        coverage = gt_coverage(gt_box=obj['box'], pred_box=pred_box)
+        max_iou = max(iou, max_iou)
+        max_gt_coverage = max(coverage, max_gt_coverage)
+    return max_iou, max_gt_coverage
+
+
+
+'''
+
+放在 pipline/evaluate.py，实现要求：
+1. 遍历 objects 中的所有真实框。
+2. 复用已有 box_iou，计算候选框与每个真实框的 IoU。
+3. 复用已有 gt_coverage，计算真实框有多少比例被候选框覆盖，注意参数顺序。
+4. 分别返回最大 IoU、最大真实框覆盖率：return max_iou, max_gt_coverage
+5. 没有真实框时，返回 (0.0, 0.0)。
+两个最大值可以来自不同真实框，不必强求同一个框。
+'''
 
 
