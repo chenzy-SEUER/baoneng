@@ -9,8 +9,8 @@ from torchvision.models import resnet50
 from pipline import classifier
 
 ROOT = Path(__file__).resolve().parents[1]
-WEIGHTS_PATH = ROOT / "output/classifier_runs/run01/last.pt"
-CROPS_DIR = ROOT / "output/classifier_crops"
+WEIGHTS_PATH = ROOT / "output/classifier_runs/run02_merged/last.pt"
+CROPS_DIR = ROOT / "output/classifier_crops_merged"
 
 
 def main():

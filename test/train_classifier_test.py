@@ -5,9 +5,9 @@ import torch
 from pipline import classifier
 
 ROOT = Path(__file__).resolve().parents[1]
-CROPS_DIR = ROOT / "output/classifier_crops"
 
-run_dir = ROOT / "output/classifier_runs/run01"
+CROPS_DIR = ROOT / "output/classifier_crops_merged"
+run_dir = ROOT / "output/classifier_runs/run02_merged"
 
 if __name__ == '__main__':
     train_loader, val_loader, class_to_idx = classifier.build_classifier_loaders(CROPS_DIR, 16, 224)
