@@ -4,14 +4,20 @@ import shutil
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import transforms, datasets
+from torchvision.models import ResNet50_Weights, resnet50
 
 
 def build_classifier_loaders(crops_dir, batch_size=32, imgsz=224):
     transform = transforms.Compose([
         transforms.Resize((imgsz, imgsz)),
         transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225],
+        ),
     ])
 
     train_ds = datasets.ImageFolder(root=os.path.join(crops_dir,'train'), transform=transform)
@@ -68,7 +74,27 @@ def export_negative_classifier_crops(review_dir, crops_dir):
     return { "train": train_copy_cnt, "val": val_copy_cnt }
 
 
+def build_classifier(num_classes):
+    """构建预训练 ResNet-50，输出 num_classes 个未归一化的分类分数。"""
+    model = resnet50(weights=ResNet50_Weights.DEFAULT)
+    # 保留预训练的特征提取部分，重新创建适合当前类别数量的分类层。
+    in_features = model.fc.in_features
+    model.fc = nn.Linear(in_features, num_classes)
+    return model
 
+
+
+'''
+要求是：
+1. 创建带预训练权重的 ResNet-50。
+2. 读取原有 model.fc.in_features。
+3. 将 model.fc 替换为输出 num_classes 个分数的线性层。
+4. 返回模型，末尾不加 Softmax，后面训练直接使用交叉熵损失。
+验证时，用类别映射的长度作为 num_classes，取一个 batch，设置 model.eval()，在 torch.no_grad() 中前向计算。预期：
+输入：[32, 3, 224, 224]
+输出：[32, 8]
+使用预训练权重时，还需要给现有图片变换补上对应的归一化。这一步先完成模型构建和前向验证，不开始训练。
+'''
 
 
 
