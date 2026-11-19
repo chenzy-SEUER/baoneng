@@ -1,5 +1,5 @@
 from pathlib import Path
-
+import torch
 from pipline import classifier
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,4 +23,13 @@ if __name__ == "__main__":
     s = classifier.count_classifier_samples(val_loader, class_to_idx)
     print("val 数据集", s)
     print("val 数据集总数：", sum(s.values()))
+
+    model = classifier.build_classifier(len(class_to_idx))
+    model.eval()
+    with torch.no_grad():
+        outputs = model(images)
+        assert outputs.shape == (images.shape[0], len(class_to_idx))
+
+
+
 
