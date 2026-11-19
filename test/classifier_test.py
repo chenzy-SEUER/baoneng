@@ -26,7 +26,7 @@ if __name__ == "__main__":
     print("val 数据集", s)
     print("val 数据集总数：", sum(s.values()))
 
-    device = torch.device("cpu")
+    device = torch.device("cuda:0")
     model = classifier.build_classifier(len(class_to_idx))
     model.to(device)
     # model.eval()
