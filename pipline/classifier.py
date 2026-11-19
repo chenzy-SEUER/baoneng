@@ -124,8 +124,26 @@ def evaluate_classifier(model, loader, criterion, device):
     }
 
 
+'''混淆矩阵统计函数'''
+def evaluate_classifier_confusion(model, loader, device, num_classes):
+    model.eval()
+    confusion = torch.zeros((num_classes, num_classes), dtype=torch.long)
+    with torch.no_grad():
+        for images, true_labels in loader:
+            images = images.to(device)
+            preds = model(images)
+            predicted_labels = preds.argmax(dim=1).cpu()
+            for true_label, predicted_label in zip(true_labels, predicted_labels):
+                confusion[true_label.item(), predicted_label.item()] += 1
+    return confusion
 
 
+
+
+'''
+
+
+'''
 
 
 
