@@ -82,24 +82,51 @@ def build_classifier(num_classes):
     model.fc = nn.Linear(in_features, num_classes)
     return model
 
+def train_one_epoch(model, loader, criterion, optimizer, device):
+    model.train()
+    total_loss,correct_count, total_samples= 0, 0, 0
+    for batch in loader:
+        images, labels = batch
+        images = images.to(device)
+        labels = labels.to(device)
+        optimizer.zero_grad()
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()*images.size(0)
+        pred = outputs.argmax(dim=1)
+        correct_count += (pred==labels).sum().item()
+        total_samples += images.size(0)
+
+    return {"loss": total_loss/total_samples,"accuracy":correct_count/total_samples}
 
 
 '''
-要求是：
-1. 创建带预训练权重的 ResNet-50。
-2. 读取原有 model.fc.in_features。
-3. 将 model.fc 替换为输出 num_classes 个分数的线性层。
-4. 返回模型，末尾不加 Softmax，后面训练直接使用交叉熵损失。
-验证时，用类别映射的长度作为 num_classes，取一个 batch，设置 model.eval()，在 torch.no_grad() 中前向计算。预期：
-输入：[32, 3, 224, 224]
-输出：[32, 8]
-使用预训练权重时，还需要给现有图片变换补上对应的归一化。这一步先完成模型构建和前向验证，不开始训练。
+按这个顺序实现：
+1. 调用 model.train()，切换到训练模式。
+2. 初始化累计损失、预测正确数、样本总数。
+3. 遍历 loader，每个 batch 执行：图片和标签移动到 device
+   optimizer.zero_grad()
+   前向计算 outputs
+   计算 loss
+   loss.backward()
+   optimizer.step()
+4. 累计统计：
+   - 损失：`loss.item() * images.size(0)`，因为默认损失是 batch 平均值。
+   - 预测类别：`outputs.argmax(dim=1)`。
+   - 正确数：预测类别与 labels 相等的数量，用 .sum().item()。
+   - 样本数：`images.size(0)`。
+5. 返回：return {
+       "loss": total_loss / total_samples,
+       "accuracy": correct_count / total_samples,
+   }
+两个注意点：
+- 训练时不能使用 torch.no_grad()。
+- 累计损失使用 .item()，不要把带计算图的 loss 张量一直累加。
+这个函数只负责训练一轮，模型、损失函数和优化器都由调用方创建；模型也需要由调用方提前移动到同一个 device。
+
 '''
-
-
-
-
-
 
 
 

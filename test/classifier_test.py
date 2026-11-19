@@ -1,5 +1,7 @@
 from pathlib import Path
 import torch
+from torch import nn, optim
+
 from pipline import classifier
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,12 +26,17 @@ if __name__ == "__main__":
     print("val 数据集", s)
     print("val 数据集总数：", sum(s.values()))
 
+    device = torch.device("cpu")
     model = classifier.build_classifier(len(class_to_idx))
-    model.eval()
-    with torch.no_grad():
-        outputs = model(images)
-        assert outputs.shape == (images.shape[0], len(class_to_idx))
+    model.to(device)
+    # model.eval()
+    # with torch.no_grad():
+    #     outputs = model(images)
+    #     assert outputs.shape == (images.shape[0], len(class_to_idx))
 
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    metrics = classifier.train_one_epoch(model, [(images, labels)], criterion, optimizer, device)
 
-
+    print("单批次训练结果：", metrics)
 
