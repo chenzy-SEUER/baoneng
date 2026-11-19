@@ -64,15 +64,55 @@ def draw_prediction(record, predictions, save_path):
     image.save(save_path)
 
 
+#save_path 是完整路径xx/xx.jpg
+def draw_classified_prediction(record, predictions, save_path):
+    image_path = record['image_path']
+    image_id = record['id']
+    image = Image.open(image_path).convert('RGB')
+    draw = ImageDraw.Draw(image)
+    objects = record['objects']
+    for obj in objects:
+        displayname = obj['label'] if obj['label']!='GB' else 'crack'
+        box = obj['box']
+        xmin, ymin, xmax, ymax = box
+        draw.rectangle(box,outline='green', width=2)
+        draw.text(
+            (xmin, max(0, ymin - 12)),
+            text=displayname,
+            fill="green",
+        )
+    for pred in predictions[image_id]:
+        box = pred['box']
+        xmin, ymin, xmax, ymax = box
+        draw.rectangle(box, outline='red', width=2)
+        text = (
+            f"{pred['label']} "
+            f"D:{pred['det_score']:.2f} "
+            f"C:{pred['cls_score']:.2f}"
+        )
+        draw.text((xmax, ymax + 5), text=text, fill="red")
+
+    save_path = Path(save_path)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    if save_path.resolve() == Path(image_path).resolve():
+        raise ValueError("输出路径不能与原图相同")
+    image.save(save_path)
+
 
 '''
-- 读取 record["image_path"]。
-- 真实框用绿色，显示原始类别。
-- 预测框用红色，显示置信度；第一阶段只有统一的 defect 类。
-- 保存到新文件，避免覆盖原图。
-- 没有预测框时也能正常保存。
-
-
+可以参考现有的 draw_prediction，实现要求：
+1. 打开原图，转换为 RGB。
+2. 绘制真实标注：
+   - 绿色框。
+   - 显示真实类别；`GB` 显示为 crack，与当前分类口径一致，但不要修改原 record。
+3. 遍历 predictions[record["id"]]，绘制分类后保留的候选：
+   - 红色框，坐标取 pred["box"]。
+   - 显示类别、检测分数和分类分数，例如：crack D:0.83 C:0.96
+   - 对应字段是 label、`det_score`、`cls_score`。
+4. 创建输出父目录，保存到完整图片路径。
+5. 输出路径与原图相同时报错，避免覆盖。
+6. 没有保留框时，也正常保存图片。
+这里传入的是 classify_candidates 返回的 kept 字典；`rejected` 先只存 JSON，不画在最终结果图上。
 '''
 
 

@@ -2,9 +2,11 @@ import json
 import os
 import shutil
 from collections import Counter, defaultdict
+from math import floor, ceil
 from pathlib import Path
 
 import torch
+from PIL import Image
 from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import transforms, datasets
@@ -83,6 +85,32 @@ def build_classifier(num_classes):
     model.fc = nn.Linear(in_features, num_classes)
     return model
 
+def build_classifier_with_weights(weights_path):
+    checkpoint = torch.load(weights_path, map_location="cpu", weights_only=True)
+    class_to_idx = checkpoint['class_to_idx']
+    num_classes = checkpoint['num_classes']
+    if checkpoint['architecture'] != 'resnet50':
+        raise ValueError("权重的模型结构不是 resnet50")
+    if num_classes != len(class_to_idx) or sorted(class_to_idx.values()) != list(range(num_classes)):
+        raise ValueError("权重中的类别数量或编号不一致")
+
+    transform = transforms.Compose([
+        transforms.Resize((checkpoint['imgsz'], checkpoint['imgsz'])),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=checkpoint['mean'], std=checkpoint['std']),
+    ])
+
+    model = resnet50(weights=None)
+    model.fc = nn.Linear(model.fc.in_features, num_classes)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    idx_to_class = {
+        idx: name for name, idx in checkpoint["class_to_idx"].items()
+    }
+    return model, transform, idx_to_class
+
+
 def train_one_epoch(model, loader, criterion, optimizer, device):
     model.train()
     total_loss,correct_count, total_samples= 0, 0, 0
@@ -139,9 +167,75 @@ def evaluate_classifier_confusion(model, loader, device, num_classes):
 
 
 
+def classify_candidates(
+    model, records, predictions, transform, idx_to_class, device
+):
+    """分类原图上的候选区域，返回保留的缺陷和剔除的非缺陷。
+
+    model 应已移动到 device；idx_to_class 使用整数类别编号作为键。
+    返回的 box 是实际裁剪区域的原图整数 xyxy 坐标。
+    """
+    kept, rejected = {}, {}
+    model.eval()
+    with torch.no_grad():
+        for record in records:
+            image_path = record["image_path"]
+            image_id = record['id']
+            kept[image_id], rejected[image_id] = [], []
+            with Image.open(image_path) as source:
+                image = source.convert('RGB')
+                width, height = image.size
+                for pred in predictions[image_id]:
+                    xmin, ymin, xmax, ymax = pred['box']
+                    # 先截断至原图边界并排除无效框，再向外取整。
+                    xmin, ymin = max(0, xmin), max(0, ymin)
+                    xmax, ymax = min(width, xmax), min(height, ymax)
+                    if xmin >= xmax or ymin >= ymax:
+                        continue
+                    box = [floor(xmin), floor(ymin), ceil(xmax), ceil(ymax)]
+                    crop = image.crop(tuple(box))
+                    inputs = transform(crop).unsqueeze(0).to(device)#unsqueeze 增加 batch 维度
+
+                    logits = model(inputs)
+                    probabilities = torch.softmax(logits, dim=1)
+                    cls_score, cls_idx = probabilities[0].max(dim=0)
+                    label = idx_to_class[cls_idx.item()]
+                    result = {
+                        "box": box,
+                        "det_score": float(pred['score']),
+                        "label": label,
+                        "cls_score": cls_score.item(),
+                    }
+                    if label == "non_defect":
+                        rejected[image_id].append(result)
+                    else:
+                        kept[image_id].append(result)
+    return kept, rejected
+
+
+
 
 '''
+要求：
+1. model.eval()，在 torch.no_grad() 中执行。
+2. 每张原图只打开一次，转换为 RGB。
+3. 遍历该图片的候选框，限制坐标范围，左上取 floor、右下取 ceil，跳过无效框。
+4. 裁剪后应用权重保存的预处理参数，加上 batch 维度并移动到设备。
+5. 模型输出经过 softmax(dim=1)，取最高分的类别及其分数。
+6. 返回两个按图片 ID 组织的字典：`kept` 和 rejected。
+   - non_defect 放入 rejected。
+   - 其他类别放入 kept。
+   - 没有结果的图片也保留空列表。
+每个结果保存：
+{
+    "box": [...],       # 原图坐标
+    "det_score": ...,   # YOLO 分数
+    "label": ...,       # 分类名称
+    "cls_score": ...,   # 分类分数
+}
+先按最高分是否为 non_defect 决定保留，不额外加分类阈值，也不把两个分数相乘。
 
+这个函数完成后，我们再接独立测试脚本和可视化：先用少量测试图验证接线，再跑全部 597 张，保存分类前后结果和带类别的框图
 
 '''
 
