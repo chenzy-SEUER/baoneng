@@ -40,3 +40,9 @@ if __name__ == "__main__":
 
     print("单批次训练结果：", metrics)
 
+    val_images, val_labels = next(iter(val_loader))
+    val_metrics = classifier.evaluate_classifier(
+        model, [(val_images, val_labels)], criterion, device
+    )
+    print("单批次验证结果：", val_metrics)
+
