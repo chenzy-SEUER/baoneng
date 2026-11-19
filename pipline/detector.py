@@ -54,7 +54,7 @@ def draw_prediction(record, predictions, save_path):
         xmin, ymin, xmax, ymax = obj['box']
         draw.text((xmin, ymin - 5), text=obj['label'])
     for pred in predictions[image_id]:
-        draw.rectangle(pred['box'], outline='red', width=2)
+        draw.rectangle(pred['box'], outline='white', width=2)
         xmin, ymin, xmax, ymax = pred['box']
         draw.text((xmax, ymax + 5), text=f"{pred['score']:.2f}")
     save_path = Path(save_path)
@@ -84,7 +84,7 @@ def draw_classified_prediction(record, predictions, save_path):
     for pred in predictions[image_id]:
         box = pred['box']
         xmin, ymin, xmax, ymax = box
-        draw.rectangle(box, outline='red', width=2)
+        draw.rectangle(box, outline='white', width=2)
         text = (
             f"{pred['label']} "
             f"D:{pred['det_score']:.2f} "

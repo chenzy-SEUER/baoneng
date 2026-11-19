@@ -70,7 +70,7 @@ def draw_record(record, save_dir):
     draw = ImageDraw.Draw(image)
     for obj in record['objects']:
         xmin, ymin, xmax, ymax = obj['box']
-        draw.rectangle((xmin, ymin, xmax, ymax), outline='red', width=3)
+        draw.rectangle((xmin, ymin, xmax, ymax), outline='white', width=3)
         draw.text((xmin, ymin - 3), text=obj['label'])
     target_dir = save_dir / Path(img_path).name
     if target_dir.resolve() == Path(img_path).resolve():
@@ -85,7 +85,7 @@ def draw_box(img_path, box, save_path):
 
     draw = ImageDraw.Draw(image)
     xmin, ymin, xmax, ymax = box
-    draw.rectangle((xmin, ymin, xmax, ymax), outline='red', width=4)
+    draw.rectangle((xmin, ymin, xmax, ymax), outline='white', width=4)
     image.save(Path(save_path))
 
 
