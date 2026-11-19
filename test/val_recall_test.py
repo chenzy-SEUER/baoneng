@@ -82,12 +82,15 @@ def main():
     results = {}
     small_object_results = {}
     for threshold in (0.5, 0.3):
-        result = evaluate_recall(records, predictions, iou_threshold=threshold,vis_dir = ROOT / f"output/predictions/missed_50ep/iou_{threshold}")
+        result = evaluate_recall(
+            records, predictions, iou_threshold=threshold,
+            vis_dir=ROOT / f"output/predictions/missed_50ep_rmhalf/iou_{threshold}",
+        )
         results[str(threshold)] = result
         small_result = evaluate_recall(
             records, predictions, iou_threshold=threshold,
             small_gt_area=SMALL_GT_AREA, min_gt_coverage=MIN_GT_COVERAGE,
-            vis_dir=ROOT / f"output/predictions/missed_50ep_small/iou_{threshold}",
+            vis_dir=ROOT / f"output/predictions/missed_50ep_small_rmhalf/iou_{threshold}",
         )
         small_object_results[str(threshold)] = small_result
         print(
