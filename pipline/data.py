@@ -1,3 +1,4 @@
+import shutil
 from collections import defaultdict
 from math import floor, ceil
 from pathlib import Path
@@ -306,16 +307,39 @@ def export_candidate_crops(records, predictions, out_dir):
 
 
 
+def merge_classifier_classes(src_dir, dst_dir):
+    src_dir, dst_dir = Path(src_dir), Path(dst_dir)
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    if any(dst_dir.iterdir()):
+        raise FileExistsError('目标文件夹存在')
+    result = {'train':defaultdict(int),'val':defaultdict(int)}
+    for split in ('train', 'val'):
+        if not (src_dir / split).is_dir():
+            raise FileNotFoundError(f"源目录不存在：{src_dir / split}")
+        split_src_dir = src_dir / split
+        split_dst_dir = dst_dir / split
+        split_dst_dir.mkdir(parents=True, exist_ok=True)
+        for p in split_src_dir.iterdir():
+            if not p.is_dir():
+                continue
+            current_dir = Path(p)
+            count = sum(1 for path in current_dir.iterdir() if path.is_file())
+
+            cls_name = p.name if p.name !='GB' else 'crack'
+            shutil.copytree(split_src_dir / p.name, split_dst_dir / cls_name, dirs_exist_ok=True)
+            result[split][cls_name] += count
+
+    return result
 
 '''
 要求：
-1. 遍历图片及其候选框，复用 measure_candidate_overlap，只导出两项都为 0 的框。
-2. 从原图裁剪，转为 RGB，不能裁剪带红绿框的可视化图片。
-3. 参考 export_gt_crops：限制坐标范围、左上取 floor、右下取 ceil，跳过无效框。
-4. 保存到独立的待检查目录：output/candidate_review/train/图片ID_pred_候选序号.jpg
-   output/candidate_review/val/图片ID_pred_候选序号.jpg
-5. 返回实际保存数量，分别打印 train、val 的结果。若没有无效框，应是 3 张和 18 张。
-先不要放入分类数据的 non_defect 目录。导出后检查这些裁剪图，确认哪些确实不含缺陷，再决定是否作为非缺陷样本。
+1. 从现有 output/classifier_crops 读取，导出到新目录 output/classifier_crops_merged，保留旧数据和原始 XML。
+2. 保持 train、val 划分不变。
+3. GB 和 crack 的图片都复制到新目录的 crack/。
+4. 其他类别按原名复制。
+5. 文件名前加原类别，例如 GB_原文件名.jpg，避免合并后同名覆盖。
+6. 目标目录已存在且非空时拒绝执行。
+7. 返回各 split、各类别的实际复制数量。
 '''
 
 
