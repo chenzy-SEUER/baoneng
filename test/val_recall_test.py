@@ -13,12 +13,12 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "output/dataset/manifest.json"
 
 WEIGHTS_PATH = ROOT / "output/yolo_detect_50ep/train2/weights/best.pt"
-PREDICTIONS_PATH = ROOT / "output/predictions/val_50ep.json"
-REPORT_PATH = ROOT / "output/predictions/val_recall_50ep.json"
+PREDICTIONS_PATH = ROOT / "output/predictions/val_50ep_rmhalf.json"
+REPORT_PATH = ROOT / "output/predictions/val_recall_50ep_rmhalf.json"
 
 # 推理参数；NMS_IOU 与下面的评估 IoU 是不同的参数。
 CONF = 0.03
-NMS_IOU = 0.7
+NMS_IOU = 0.7#0.6
 IMGSZ = 640
 DEVICE = "0"
 SMALL_GT_AREA = 12 * 12
@@ -60,12 +60,16 @@ def main():
             imgsz=IMGSZ, device=DEVICE, verbose=False,
         )[0]
         boxes = result.boxes
-        predictions[record["id"]] = [
+        image_predictions = [
             {"box": box, "score": score}
             for box, score in zip(
                 boxes.xyxy.cpu().tolist(), boxes.conf.cpu().tolist()
             )
         ]
+        if len(image_predictions) > 10:
+            image_predictions.sort(key=lambda prediction: prediction["score"], reverse=True)
+            image_predictions = image_predictions[:len(image_predictions) // 2]
+        predictions[record["id"]] = image_predictions
         if index % 50 == 0 or index == len(records):
             print(f"推理进度：{index}/{len(records)}", flush=True)
 
