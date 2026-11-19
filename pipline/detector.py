@@ -90,7 +90,7 @@ def draw_classified_prediction(record, predictions, save_path):
             f"D:{pred['det_score']:.2f} "
             f"C:{pred['cls_score']:.2f}"
         )
-        draw.text((xmax, ymax + 5), text=text, fill="red")
+        draw.text((xmax, ymax + 5), text=text, fill="white")
 
     save_path = Path(save_path)
     save_path.parent.mkdir(parents=True, exist_ok=True)
