@@ -19,6 +19,9 @@ def train_detector(
     return str(best_weights_path)
 
 
+
+def predict_image(model, image_path, *, conf=0.03, imgsz=640, device="0", nms_iou=None, verbose=None)
+
 def predict_records(
     weights_path,
     records,
