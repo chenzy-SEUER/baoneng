@@ -1,14 +1,12 @@
-from pathlib import Path
+"""兼容旧入口，正式命令为 python -m scripts.train_classifier。"""
 
-from pipline import classifier
+if __name__ == "__main__" and not __package__:
+    import sys
+    from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-CROPS_DIR = ROOT / "output/classifier_crops_merged"
-RUN_DIR = ROOT / "output/classifier_runs/run02_merged"
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-
-def main():
-    return classifier.train_classifier(CROPS_DIR, RUN_DIR)
+from scripts.train_classifier import main
 
 
 if __name__ == "__main__":

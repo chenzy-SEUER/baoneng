@@ -20,7 +20,27 @@ def train_detector(
 
 
 
-def predict_image(model, image_path, *, conf=0.03, imgsz=640, device="0", nms_iou=None, verbose=None)
+#预测一张图片
+def predict_image(model, image_path, conf=0.03, imgsz=640, device="0", nms_iou=None, verbose=None):
+    options = {
+        "conf": conf,
+        "imgsz": imgsz,
+        "device": device,
+    }
+    if nms_iou is not None:
+        options["iou"] = nms_iou
+    if verbose is not None:
+        options["verbose"] = verbose
+
+    results = model.predict(source=str(image_path), **options)
+    boxes = results[0].boxes
+    xyxys = boxes.xyxy.cpu().tolist()
+    scores = boxes.conf.cpu().tolist()
+    results = []
+    for xyxy, score in zip(xyxys, scores):
+        results.append({"box":xyxy,"score":score})
+    return results
+
 
 def predict_records(
     weights_path,
@@ -33,13 +53,8 @@ def predict_records(
     model = YOLO(weights_path)
     predictions = {}
     for record in records:
-        predictions[record["id"]]=[]
-        results = model.predict(source=record['image_path'], conf=conf, imgsz=imgsz, device=device)
-        boxes = results[0].boxes
-        xyxys = boxes.xyxy.cpu().tolist()
-        scores = boxes.conf.cpu().tolist()
-        for xyxy, score in zip(xyxys, scores):
-            predictions[record["id"]].append({"box":xyxy,"score":score})
+        candidates = predict_image(model, record["image_path"], conf=conf, imgsz=imgsz, device=device)
+        predictions[record["id"]] = candidates
     json_file_path = Path(save_path)
     json_file_path.parent.mkdir(parents=True, exist_ok=True)
     with json_file_path.open('w', encoding='utf-8') as f:
@@ -102,45 +117,8 @@ def draw_classified_prediction(record, predictions, save_path):
     image.save(save_path)
 
 
-'''
-可以参考现有的 draw_prediction，实现要求：
-1. 打开原图，转换为 RGB。
-2. 绘制真实标注：
-   - 绿色框。
-   - 显示真实类别；`GB` 显示为 crack，与当前分类口径一致，但不要修改原 record。
-3. 遍历 predictions[record["id"]]，绘制分类后保留的候选：
-   - 红色框，坐标取 pred["box"]。
-   - 显示类别、检测分数和分类分数，例如：crack D:0.83 C:0.96
-   - 对应字段是 label、`det_score`、`cls_score`。
-4. 创建输出父目录，保存到完整图片路径。
-5. 输出路径与原图相同时报错，避免覆盖。
-6. 没有保留框时，也正常保存图片。
-这里传入的是 classify_candidates 返回的 kept 字典；`rejected` 先只存 JSON，不画在最终结果图上。
-'''
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+def keep_top_half_if_over_ten(candidates):
+    if len(candidates) > 10:
+        candidates.sort(key=lambda prediction: prediction["score"], reverse=True)
+        return candidates[:len(candidates) // 2]
+    return candidates

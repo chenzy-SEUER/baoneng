@@ -1,28 +1,12 @@
-from pathlib import Path
-from pipline import detector
+"""兼容旧入口，正式命令为 python -m scripts.train_detector。"""
 
-ROOT = Path(__file__).resolve().parents[1]
+if __name__ == "__main__" and not __package__:
+    import sys
+    from pathlib import Path
 
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-def main():
-    yaml_path = ROOT / "output/dataset/dataset.yaml"
-    model_path = ROOT / "yolo11n.pt"
-
-    if not yaml_path.is_file():
-        raise FileNotFoundError(yaml_path)
-    if not model_path.is_file():
-        raise FileNotFoundError(model_path)
-
-    best_weights_path = detector.train_detector(
-        yaml_path=str(yaml_path),
-        model_path=str(model_path),
-        out_dir=str(ROOT / "output/yolo_detect_50ep"),
-        epochs=50,
-        imgsz=640,
-        batch=4,
-        device="0",
-    )
-    print(f"最佳权重：{best_weights_path}")
+from scripts.train_detector import main
 
 
 if __name__ == "__main__":

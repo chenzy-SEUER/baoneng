@@ -7,7 +7,7 @@
 - 本项目是基于 PyTorch、Ultralytics YOLO 和 Pillow/OpenCV 的目标检测实验项目。
 - 主要流程包括：读取带 Pascal VOC XML 标注的数据集、划分数据、导出 YOLO 格式、训练检测器、执行推理以及评估召回率。
 - Python 包目录目前命名为 `pipline/`。这是现有名称，不要擅自改为 `pipeline/`，否则会破坏现有导入。
-- `main.py` 是当前流程入口；`test/` 下的文件主要是可直接运行的实验/验证脚本，并非标准、独立的单元测试套件。
+- `main.py` 是当前流程入口；`scripts/` 提供实验命令，`test/` 包含实验检查和旧命令的兼容入口。
 
 ## 目录与关键文件
 
@@ -16,20 +16,22 @@
 - `pipline/export_yolo.py`：将记录导出为 Ultralytics YOLO 数据集格式。
 - `pipline/detector.py`：YOLO 训练、推理和预测结果可视化。
 - `pipline/evaluate.py`：IoU、覆盖率和召回率评估。
-- `pipline/classifier.py`：分类数据加载器的早期实现；修改前应先检查其当前可用性。
-- `test/`：依赖本地数据、模型权重和既有输出的实验脚本。
+- `pipline/classifier.py`：分类数据加载、训练、权重加载和候选区域分类。
+- `pipline/two_stage.py`：单图检测、候选筛选和分类。
+- `scripts/`：检测和分类的训练、推理、评估及标注裁剪命令。
+- `test/`：旧命令的兼容入口及依赖本地资产的实验检查。
 - `requirements.txt`：Python 依赖；其中 PyTorch/torchvision 版本需要与目标机器的 CUDA 环境匹配。
 
 ## 本地环境
 
-建议使用独立虚拟环境：
+本机 PyCharm 项目使用 Conda 环境 `baoneng`，解释器位于 `~/miniconda3/envs/baoneng/bin/python`。运行项目脚本、语法检查或模型验证前，先激活项目环境并确认解释器及依赖：
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+conda activate baoneng
+python -c 'import sys, torch, ultralytics; print(sys.executable); print("PyTorch", torch.__version__, "Ultralytics", ultralytics.__version__)'
 ```
+
+确认 `sys.executable` 指向 `baoneng` 环境后，使用 `python` 运行下文的命令。在非交互式 shell 中，可以用 `conda run -n baoneng python <参数>`，或直接调用 `"$HOME/miniconda3/envs/baoneng/bin/python"`。不要用系统的 `/usr/bin/python3` 验证项目或判断依赖是否缺失。
 
 迁移到其他电脑时，先确认 Python、显卡驱动、CUDA、PyTorch 和 torchvision 的兼容关系。CPU 环境或无编号为 `0` 的 CUDA 设备时，需要显式调整代码/脚本中的 `device="0"`。
 
@@ -44,23 +46,31 @@ python -m pip install -r requirements.txt
 
 ## 常用命令
 
-从项目根目录执行：
+激活 `baoneng` 环境后，从项目根目录执行：
 
 ```bash
 # 完整数据导出与一次训练流程
 python main.py
 
 # 使用现有 dataset.yaml 和 yolo11n.pt 训练
-python test/train_test.py
+python -m scripts.train_detector
 
 # 使用现有权重和 manifest 推理并生成可视化
-python test/predict_test.py
+python -m scripts.predict_detector
 
 # 在验证集上计算召回率并输出报告
-python test/val_recall_test.py
+python -m scripts.evaluate_recall
 
 # 从 manifest 导出目标裁剪（脚本当前依赖既有输出）
-python test/crops_test.py
+python -m scripts.export_gt_crops
+
+# 训练分类器和评估分类混淆矩阵
+python -m scripts.train_classifier
+python -m scripts.evaluate_classifier
+
+# 两阶段样本推理和完整 test 集 mAP@0.5 评估
+python -m scripts.predict_two_stage
+python -m scripts.evaluate_two_stage_map
 ```
 
 这些脚本依赖各自代码中写明的本地路径和既有文件。运行前先检查数据、manifest、模型权重与输出目录是否存在；不要把缺少这些外部资产误判为代码回归。
@@ -77,10 +87,10 @@ python test/crops_test.py
 
 ## 完成前检查
 
-- 对改动过的 Python 文件至少执行语法检查，例如：
+- 确认使用 `baoneng` 环境后，对改动过的 Python 文件至少执行语法检查，例如：
 
 ```bash
-python -m compileall main.py pipline test
+python -m compileall main.py pipline scripts test
 ```
 
 - 若改动不依赖真实数据或 GPU，应运行对应的轻量测试。

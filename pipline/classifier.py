@@ -13,13 +13,17 @@ from torchvision import transforms, datasets
 from torchvision.models import ResNet50_Weights, resnet50
 
 
+CLASSIFIER_MEAN = (0.485, 0.456, 0.406)
+CLASSIFIER_STD = (0.229, 0.224, 0.225)
+
+
 def build_classifier_loaders(crops_dir, batch_size=32, imgsz=224):
     transform = transforms.Compose([
         transforms.Resize((imgsz, imgsz)),
         transforms.ToTensor(),
         transforms.Normalize(
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225],
+            mean=CLASSIFIER_MEAN,
+            std=CLASSIFIER_STD,
         ),
     ])
 
@@ -85,7 +89,7 @@ def build_classifier(num_classes):
     model.fc = nn.Linear(in_features, num_classes)
     return model
 
-def build_classifier_with_weights(weights_path):
+def build_classifier_with_weights(weights_path, device):
     checkpoint = torch.load(weights_path, map_location="cpu", weights_only=True)
     class_to_idx = checkpoint['class_to_idx']
     num_classes = checkpoint['num_classes']
@@ -103,12 +107,8 @@ def build_classifier_with_weights(weights_path):
     model = resnet50(weights=None)
     model.fc = nn.Linear(model.fc.in_features, num_classes)
     model.load_state_dict(checkpoint['model_state_dict'])
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
-    idx_to_class = {
-        idx: name for name, idx in checkpoint["class_to_idx"].items()
-    }
-    return model, transform, idx_to_class
+    return model, transform, checkpoint
 
 
 def train_one_epoch(model, loader, criterion, optimizer, device):
@@ -212,37 +212,36 @@ def classify_candidates(
                         kept[image_id].append(result)
     return kept, rejected
 
+def train_classifier(crops_dir, run_dir, epochs, batch_size, imgsz, learning_rate, device):
+    train_loader, val_loader, class_to_idx = build_classifier_loaders(crops_dir, batch_size, imgsz)
+    run_dir.mkdir(parents=True, exist_ok=False)
+    model = build_classifier(len(class_to_idx))
+    model.to(device)
+    loss = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
+    for epoch in range(epochs):
+        train_metrics = train_one_epoch(model, train_loader, loss, optimizer, device)
+        val_metrics = evaluate_classifier(model, val_loader, loss, device)
+        print(
+            f"Epoch {epoch + 1}/{epochs} "
+            f"train_loss={train_metrics['loss']:.4f} "
+            f"train_acc={train_metrics['accuracy']:.4f} "
+            f"val_loss={val_metrics['loss']:.4f} "
+            f"val_acc={val_metrics['accuracy']:.4f}"
+        )
 
-
-'''
-要求：
-1. model.eval()，在 torch.no_grad() 中执行。
-2. 每张原图只打开一次，转换为 RGB。
-3. 遍历该图片的候选框，限制坐标范围，左上取 floor、右下取 ceil，跳过无效框。
-4. 裁剪后应用权重保存的预处理参数，加上 batch 维度并移动到设备。
-5. 模型输出经过 softmax(dim=1)，取最高分的类别及其分数。
-6. 返回两个按图片 ID 组织的字典：`kept` 和 rejected。
-   - non_defect 放入 rejected。
-   - 其他类别放入 kept。
-   - 没有结果的图片也保留空列表。
-每个结果保存：
-{
-    "box": [...],       # 原图坐标
-    "det_score": ...,   # YOLO 分数
-    "label": ...,       # 分类名称
-    "cls_score": ...,   # 分类分数
-}
-先按最高分是否为 non_defect 决定保留，不额外加分类阈值，也不把两个分数相乘。
-
-这个函数完成后，我们再接独立测试脚本和可视化：先用少量测试图验证接线，再跑全部 597 张，保存分类前后结果和带类别的框图
-
-'''
-
-
-
-
-
-
-
-
+        torch.save({
+            "epoch": epoch + 1,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "class_to_idx": class_to_idx,
+            "num_classes": len(class_to_idx),
+            "architecture": "resnet50",
+            "imgsz": imgsz,
+            "mean": list(CLASSIFIER_MEAN),
+            "std": list(CLASSIFIER_STD),
+            "train_metrics": train_metrics,
+            "val_metrics": val_metrics,
+        },
+        run_dir / "last.pt",)

@@ -1,22 +1,13 @@
-from pathlib import Path
-from pipline import data
+"""兼容旧入口，正式命令为 python -m scripts.export_gt_crops。"""
 
-ROOT = Path(__file__).resolve().parents[1]
-manifest_path = ROOT / "output/dataset/manifest.json"
+if __name__ == "__main__" and not __package__:
+    import sys
+    from pathlib import Path
 
-# records = []
-# for split in ("train", "val"):
-#     records.extend(
-#         data.load_dataset_from_manifest(manifest_path, split, count=5)
-#     )
-#
-# count = data.export_gt_crops(
-#     records, ROOT / "output/classifier_crops"
-# )
-# print(f"保存了 {count} 张裁剪图片")
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-records = data.load_manifest(manifest_path)
-count = data.export_gt_crops(
-    records, ROOT / "output/classifier_crops"
-)
-print(f"保存了 {count} 张裁剪图片")
+from scripts.export_gt_crops import main
+
+
+if __name__ == "__main__":
+    main()
