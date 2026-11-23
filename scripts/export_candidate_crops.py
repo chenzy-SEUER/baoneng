@@ -8,8 +8,8 @@ manifest_path = ROOT / "output/dataset/manifest.json"
 sample_json_prefix = ROOT / "output/predictions/"
 prediction_draw = ROOT / "output/predictions/vis_crop_sample"
 
-if __name__ == "__main__":
 
+def main():
     for split in ('train', 'val'):
         records = data.load_dataset_from_manifest(manifest_path, split, count=5)
         predictions = detector.predict_records(best_weights_path, records,
@@ -41,11 +41,5 @@ if __name__ == "__main__":
         print(f"{split} 实际保存裁剪数：{saved_count}")
 
 
-
-'''
-- 对每个候选框调用该函数。
-- 两项都为 0，计入“与标注无重叠候选数”。
-- 其余计入“与标注有重叠候选数”。
-- 分别打印 train、val 的结果，检查两组数量之和等于候选框总数。
-暂时称它们为“无重叠候选”，还不能直接认定为非缺陷，后面需要通过裁剪图检查是否存在漏标
-'''
+if __name__ == "__main__":
+    main()

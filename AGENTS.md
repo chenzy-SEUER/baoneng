@@ -7,7 +7,7 @@
 - 本项目是基于 PyTorch、Ultralytics YOLO 和 Pillow/OpenCV 的目标检测实验项目。
 - 主要流程包括：读取带 Pascal VOC XML 标注的数据集、划分数据、导出 YOLO 格式、训练检测器、执行推理以及评估召回率。
 - Python 包目录目前命名为 `pipline/`。这是现有名称，不要擅自改为 `pipeline/`，否则会破坏现有导入。
-- `main.py` 是当前流程入口；`scripts/` 提供实验命令，`test/` 包含实验检查和旧命令的兼容入口。
+- `main.py` 是当前流程入口，`scripts/` 提供实验命令和检查。
 
 ## 目录与关键文件
 
@@ -18,8 +18,7 @@
 - `pipline/evaluate.py`：IoU、覆盖率和召回率评估。
 - `pipline/classifier.py`：分类数据加载、训练、权重加载和候选区域分类。
 - `pipline/two_stage.py`：单图检测、候选筛选和分类。
-- `scripts/`：检测和分类的训练、推理、评估及标注裁剪命令。
-- `test/`：旧命令的兼容入口及依赖本地资产的实验检查。
+- `scripts/`：检测和分类的训练、推理、评估、数据准备及检查命令。
 - `requirements.txt`：Python 依赖；其中 PyTorch/torchvision 版本需要与目标机器的 CUDA 环境匹配。
 
 ## 本地环境
@@ -64,6 +63,17 @@ python -m scripts.evaluate_recall
 # 从 manifest 导出目标裁剪（脚本当前依赖既有输出）
 python -m scripts.export_gt_crops
 
+# 导出待审核的候选裁剪，再导入已审核的负样本
+python -m scripts.export_candidate_crops
+python -m scripts.import_negative_crops
+
+# 将分类裁剪数据集中的 GB 合并到 crack
+# 校验原实验的数据量时，给此命令加 --check-expected-counts
+python -m scripts.merge_classifier_classes
+
+# 检查分类数据加载和单批次训练、验证
+python -m scripts.check_classifier_batch
+
 # 训练分类器和评估分类混淆矩阵
 python -m scripts.train_classifier
 python -m scripts.evaluate_classifier
@@ -90,7 +100,7 @@ python -m scripts.evaluate_two_stage_map
 - 确认使用 `baoneng` 环境后，对改动过的 Python 文件至少执行语法检查，例如：
 
 ```bash
-python -m compileall main.py pipline scripts test
+python -m compileall main.py pipline scripts
 ```
 
 - 若改动不依赖真实数据或 GPU，应运行对应的轻量测试。

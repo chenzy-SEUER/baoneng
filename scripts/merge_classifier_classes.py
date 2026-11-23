@@ -1,3 +1,6 @@
+"""将分类裁剪数据集中的 GB 合并到 crack。"""
+
+import argparse
 from pathlib import Path
 
 from pipline import data
@@ -7,8 +10,15 @@ SRC_DIR = ROOT / "output/classifier_crops"
 DST_DIR = ROOT / "output/classifier_crops_merged"
 
 
-if __name__ == "__main__":
+def main(*, check_expected_counts=False):
     counts = data.merge_classifier_classes(SRC_DIR, DST_DIR)
+    if check_expected_counts:
+        check_counts(counts)
+    print(f"类别合并完成，输出目录：{DST_DIR}")
+    return counts
+
+
+def check_counts(counts):
     expected_totals = {"train": 13376, "val": 2793}
     expected_crack = {"train": 572, "val": 107}
 
@@ -30,3 +40,10 @@ if __name__ == "__main__":
         assert total == expected_totals[split], f"{split} 总数不符合预期"
 
     print("类别合并及数量检查通过，输出目录：", DST_DIR)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check-expected-counts", action="store_true", help="核对原实验数据集的样本数量")
+    args = parser.parse_args()
+    main(check_expected_counts=args.check_expected_counts)
