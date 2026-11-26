@@ -4,15 +4,16 @@ import yaml
 from pathlib import Path
 
 
-def export_detector_dataset(records, out_dir):
+def export_detector_dataset(records, out_dir, *, include_test=True):
     yaml_path = Path(out_dir) / "dataset.yaml"
     yaml_data = {
         'path': str(Path(out_dir).resolve()),
         'train': 'images/train',
         'val': 'images/val',
-        'test': 'images/test',
-        'names':{0:'defect'}
     }
+    if include_test:
+        yaml_data['test'] = 'images/test'
+    yaml_data['names'] = {0: 'defect'}
     yaml_path.parent.mkdir(parents=True, exist_ok=True)#父目录
     #不存在时创建，存在时覆盖
     with yaml_path.open(mode='w', encoding='utf-8') as f:
@@ -39,7 +40,7 @@ def export_detector_dataset(records, out_dir):
             bw = (xmax - xmin) / width
             bh = (ymax - ymin) / height
             text_content.append(f'0 {xc} {yc} {bw} {bh}')
-        label_text_path.write_text('\n'.join(text_content))
+        label_text_path.write_text('\n'.join(text_content), encoding='utf-8')
 
 
 

@@ -21,7 +21,10 @@
 - `scripts/`：检测和分类的训练、推理、评估、数据准备及检查命令。
 - `requirements.txt`：Python 依赖；其中 PyTorch/torchvision 版本需要与目标机器的 CUDA 环境匹配。
 
-## 本地环境
+## 运行环境
+
+- 当前 macOS 机器用于编码、CPU 调试和轻量验证。
+- 另一台机器运行 Ubuntu，配有 NVIDIA GeForce RTX 2070 SUPER（8 GB 显存），用于 GPU 训练和推理。运行前在目标环境确认 PyTorch 能识别 CUDA。单卡训练使用 Ultralytics 的 `device=0`。
 
 本机 PyCharm 项目使用 Conda 环境 `baoneng`，解释器位于 `~/miniconda3/envs/baoneng/bin/python`。运行项目脚本、语法检查或模型验证前，先激活项目环境并确认解释器及依赖：
 

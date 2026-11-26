@@ -26,20 +26,38 @@ def main():
     parser.add_argument("--device", default="cuda:0" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--threads", type=int, default=2, help="CPU 线程数")
     parser.add_argument("--out-dir", type=Path, default=None)
+    parser.add_argument("--test-data", type=Path, nargs="+", help="独立的 VOC 测试数据集目录")
+    parser.add_argument("--detector-weights", type=Path, default=ROOT / "output/yolo_detect_50ep/train2/weights/best.pt")
+    parser.add_argument("--classifier-weights", type=Path, default=ROOT / "output/classifier_runs/run02_merged/last.pt")
     args = parser.parse_args()
     if args.threads < 1:
         raise ValueError("threads 必须大于 0")
     torch.set_num_threads(args.threads)
 
-    manifest = ROOT / "output/dataset/manifest.json"
-    detector_weights = ROOT / "output/yolo_detect_50ep/train2/weights/best.pt"
-    classifier_weights = ROOT / "output/classifier_runs/run02_merged/last.pt"
-    for path in (manifest, detector_weights, classifier_weights):
+    detector_weights = args.detector_weights.resolve()
+    classifier_weights = args.classifier_weights.resolve()
+    for path in (detector_weights, classifier_weights):
         if not path.is_file():
             raise FileNotFoundError(path)
-    records = [r for r in data.load_manifest(manifest) if r["split"] == "test"]
-    if not records:
-        raise ValueError("manifest 中没有 test 数据")
+    if args.test_data:
+        test_dirs = [path.resolve() for path in args.test_data]
+        records = []
+        for path in test_dirs:
+            loaded, summary = data.load_dataset(path)
+            if not loaded or summary["missing_annotations"] or summary["errors"]:
+                raise ValueError(f"测试数据为空或图片标注不完整：{path}，{summary}")
+            records.extend(sorted(loaded, key=lambda record: record["id"]))
+        if len({record["id"] for record in records}) != len(records):
+            raise ValueError("测试数据中存在重复图片 ID")
+        test_source = {"test_data": [str(path) for path in test_dirs]}
+    else:
+        manifest = ROOT / "output/dataset/manifest.json"
+        if not manifest.is_file():
+            raise FileNotFoundError(manifest)
+        records = [r for r in data.load_manifest(manifest) if r["split"] == "test"]
+        if not records:
+            raise ValueError("manifest 中没有 test 数据")
+        test_source = {"manifest": str(manifest)}
     for record in records:
         path = Path(record["image_path"])
         if not path.is_absolute():
@@ -62,7 +80,7 @@ def main():
     settings = {
         "split": "test", "image_count": len(records),
         "datasets": dict(Counter(r["dataset"] for r in records)),
-        "manifest": str(manifest), "detector_weights": str(detector_weights),
+        **test_source, "detector_weights": str(detector_weights),
         "classifier_weights": str(classifier_weights), "device": str(device),
         "conf": conf, "nms_iou": nms_iou, "imgsz": imgsz,
         "candidate_rule": "if count > 10: sort by detection score descending and keep count // 2",

@@ -95,6 +95,8 @@ def split_records(records, train_ratio=0.7, val_ratio=0.15, seed=42):
     rng = random.Random(seed)
     rng.shuffle(copy_records)
     split1, split2 = int(len(copy_records) * train_ratio), int(len(copy_records) * val_ratio)
+    if train_ratio + val_ratio == 1:
+        split2 = len(copy_records) - split1
     train_records = copy_records[:split1]
     val_records = copy_records[split1:split1 + split2]
     test_records = copy_records[split1 + split2:]
