@@ -18,7 +18,7 @@ def main():
     parser.add_argument("--device", default="0")
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--imgsz", type=int, default=640)
-    parser.add_argument("--batch", type=int, default=4)
+    parser.add_argument("--batch", type=int, default=8)
     args = parser.parse_args()
     if min(args.epochs, args.imgsz, args.batch) < 1:
         parser.error("--epochs、--imgsz、--batch 必须大于 0")
