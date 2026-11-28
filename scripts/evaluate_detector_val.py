@@ -7,6 +7,7 @@ from pathlib import Path
 from statistics import median
 
 import torch
+from torchvision.ops import nms
 from ultralytics import YOLO
 from ultralytics.data.utils import IMG_FORMATS
 
@@ -86,7 +87,40 @@ def recall_counts(total, matched):
     }
 
 
-def evaluate(records, images_dir, weights, args):
+def predict_validation(model, records, images_dir, args, tile_data):
+    tile_records, inference_dir = tile_data if tile_data else (records, images_dir)
+    seen = set()
+    by_source = defaultdict(list)
+    for result in model.predict(
+        source=str(inference_dir), stream=True, batch=args.batch, device=args.device,
+        imgsz=args.imgsz, conf=min(args.conf), iou=args.nms_iou, max_det=300,
+        verbose=False,
+    ):
+        image_id = Path(result.path).stem
+        if image_id in seen or image_id not in tile_records:
+            raise ValueError(f"推理返回了重复或未知的图片：{result.path}")
+        seen.add(image_id)
+        boxes = result.boxes.xyxy.cpu()
+        scores = result.boxes.conf.cpu()
+        if tile_data:
+            tile = tile_records[image_id]
+            x, y = tile["offset"]
+            by_source[tile["source_image_id"]].append((boxes + boxes.new_tensor([x, y, x, y]), scores))
+        else:
+            yield image_id, boxes.tolist(), scores.tolist()
+        if len(seen) % 150 == 0 or len(seen) == len(tile_records):
+            print(f"推理进度 {len(seen)}/{len(tile_records)}", flush=True)
+    if seen != tile_records.keys():
+        raise ValueError(f"部分验证图片没有推理结果：{sorted(tile_records.keys() - seen)}")
+    if tile_data:
+        for image_id, parts in by_source.items():
+            boxes = torch.cat([part[0] for part in parts])
+            scores = torch.cat([part[1] for part in parts])
+            keep = nms(boxes, scores, args.nms_iou)
+            yield image_id, boxes[keep].tolist(), scores[keep].tolist()
+
+
+def evaluate(records, images_dir, weights, args, tile_data=None):
     model = YOLO(str(weights))
     totals = {"by_dataset": Counter(), "by_class": Counter()}
     sizes = defaultdict(list)
@@ -97,25 +131,15 @@ def evaluate(records, images_dir, weights, args):
             label = LABEL_ALIASES.get(obj["label"], obj["label"])
             totals["by_class"][label] += 1
             x1, y1, x2, y2 = obj["box"]
-            sizes[label].append(min(x2 - x1, y2 - y1) * scale)
+            if tile_data is None:
+                sizes[label].append(min(x2 - x1, y2 - y1) * scale)
 
     hits = {conf: {group: Counter() for group in totals} for conf in args.conf}
     prediction_counts = Counter()
-    seen = set()
-    for result in model.predict(
-        source=str(images_dir), stream=True, batch=args.batch, device=args.device,
-        imgsz=args.imgsz, conf=min(args.conf), iou=args.nms_iou, max_det=300,
-        verbose=False,
-    ):
-        image_id = Path(result.path).stem
-        if image_id in seen or image_id not in records:
-            raise ValueError(f"推理返回了重复或未知的图片：{result.path}")
-        seen.add(image_id)
+    for image_id, boxes, scores in predict_validation(model, records, images_dir, args, tile_data):
         record = records[image_id]
         objects = record["objects"]
-        predictions = sorted(
-            zip(result.boxes.conf.tolist(), result.boxes.xyxy.tolist()), reverse=True,
-        )
+        predictions = sorted(zip(scores, boxes), reverse=True)
         for conf in args.conf:
             matched, count = match_predictions(objects, predictions, conf, args.match_iou)
             prediction_counts[conf] += count
@@ -123,10 +147,6 @@ def evaluate(records, images_dir, weights, args):
             for index in matched:
                 label = objects[index]["label"]
                 hits[conf]["by_class"][LABEL_ALIASES.get(label, label)] += 1
-        if len(seen) % 150 == 0 or len(seen) == len(records):
-            print(f"推理进度 {len(seen)}/{len(records)}", flush=True)
-    if seen != records.keys():
-        raise ValueError(f"部分验证图片没有推理结果：{sorted(records.keys() - seen)}")
 
     thresholds = {}
     for conf in args.conf:
@@ -135,8 +155,8 @@ def evaluate(records, images_dir, weights, args):
                     for name, total in counts.most_common()}
             for group, counts in totals.items()
         }
-        for name, counts in groups["by_class"].items():
-            counts["median_short_side_px"] = round(median(sizes[name]), 1)
+        for name, edges in sizes.items():
+            groups["by_class"][name]["median_short_side_px"] = round(median(edges), 1)
         gt_count = sum(totals["by_class"].values())
         matched_count = sum(hits[conf]["by_class"].values())
         prediction_count = prediction_counts[conf]
@@ -146,13 +166,17 @@ def evaluate(records, images_dir, weights, args):
             "precision": matched_count / prediction_count if prediction_count else None,
             **groups,
         }
-    return {
+    report = {
         "weights": str(weights),
         "manifest": str(images_dir.parent.parent / "manifest.json"),
         "image_count": len(records),
         "checkpoint_validation_metrics": (model.ckpt or {}).get("train_metrics"),
         "thresholds": thresholds,
     }
+    if tile_data:
+        report["tile_manifest"] = str(tile_data[1].parent.parent / "manifest.json")
+        report["tile_count"] = len(tile_data[0])
+    return report
 
 
 def print_report(result):
@@ -174,6 +198,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--modality", choices=("both", *MODALITIES), default="both")
     parser.add_argument("--dataset-dir", type=Path, default=EXPERIMENT_DIR / "by_modality")
+    parser.add_argument("--visible-tiles-dir", type=Path, help="可见光切片数据目录，预测合并回原图后评估")
     for modality in MODALITIES:
         parser.add_argument(
             f"--{modality}-weights", type=Path,
@@ -202,7 +227,19 @@ def main():
         if not weights.is_file():
             raise FileNotFoundError(f"权重不存在：{weights}")
         records, images_dir = load_validation_data((args.dataset_dir / modality).resolve())
-        inputs[modality] = records, images_dir, weights
+        tile_data = None
+        if modality == "visible" and args.visible_tiles_dir is not None:
+            tiles, tile_images_dir = load_validation_data(args.visible_tiles_dir.resolve())
+            if {tile["source_image_id"] for tile in tiles.values()} != records.keys():
+                raise ValueError("切片清单的原图 ID 与可见光验证集不一致")
+            for tile in tiles.values():
+                original = records[tile["source_image_id"]]
+                x, y = tile["offset"]
+                if not (0 <= x < x + tile["width"] <= original["width"]
+                        and 0 <= y < y + tile["height"] <= original["height"]):
+                    raise ValueError(f"切片超出原图范围：{tile['id']}")
+            tile_data = tiles, tile_images_dir
+        inputs[modality] = records, images_dir, weights, tile_data
 
     report = {
         "inference": {
@@ -212,9 +249,9 @@ def main():
         "label_aliases": LABEL_ALIASES,
         "modalities": {},
     }
-    for modality, (records, images_dir, weights) in inputs.items():
+    for modality, (records, images_dir, weights, tile_data) in inputs.items():
         print(f"评估 {modality} 验证集，共 {len(records)} 张图", flush=True)
-        result = evaluate(records, images_dir, weights, args)
+        result = evaluate(records, images_dir, weights, args, tile_data)
         report["modalities"][modality] = result
         print_report(result)
     if args.report:
