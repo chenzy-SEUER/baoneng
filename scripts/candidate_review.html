@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>缺陷候选审核</title>
+<style>
+  :root { color-scheme: light; font: 15px/1.5 system-ui, sans-serif; color: #222a26; background: #f2f4ef; }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  header { position: sticky; z-index: 1; top: 0; background: #f8faf6; border-bottom: 1px solid #d3dbd1; }
+  .frame { max-width: 1440px; margin: auto; padding: 16px 24px; }
+  .top, .controls, .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .top { justify-content: space-between; gap: 12px; }
+  h1 { font-size: 1.45rem; margin: 0; }
+  #summary { color: #536459; margin: 2px 0 0; }
+  .controls { margin-top: 12px; }
+  .actions { margin-top: 8px; }
+  button, select, input { font: inherit; }
+  button, select, input[type=search], input[type=text] { border: 1px solid #c4d0c5; border-radius: 7px; background: white; color: inherit; padding: 5px 9px; }
+  button, select { cursor: pointer; }
+  button:hover:not(:disabled) { border-color: #2b6953; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid #327b60; outline-offset: 2px; }
+  button:disabled { opacity: .42; cursor: default; }
+  .primary { background: #21634b; color: white; border-color: #21634b; }
+  .helper { margin: 0; color: #536459; font-size: .9rem; }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 11px; margin-top: 10px; }
+  .card { min-width: 0; background: white; border: 1px solid #dce3d9; border-radius: 9px; overflow: hidden; }
+  .card.selected { outline: 2px solid #277657; outline-offset: -2px; border-color: #277657; }
+  .crop { position: relative; padding: 0; width: 100%; border: 0; border-radius: 0; background: #272e2a; display: block; }
+  .crop img { display: block; width: 100%; height: 130px; object-fit: contain; }
+  .tick { position: absolute; left: 7px; top: 7px; width: 19px; height: 19px; line-height: 17px; border: 1px solid white; border-radius: 4px; background: #273c32; color: white; }
+  .selected .tick { background: #277657; }
+  .detail { padding: 7px 9px 9px; }
+  .name { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .81rem; }
+  .meta { margin: 2px 0 6px; font-size: .8rem; color: #536459; }
+  .card-actions { display: flex; align-items: center; justify-content: space-between; gap: 4px; font-size: .8rem; }
+  .card-actions button { padding: 2px 6px; }
+  .status { color: #5a655e; }
+  .status[data-value="non_defect"] { color: #176349; }
+  .status[data-value="defect"] { color: #99383b; }
+  .status[data-value="uncertain"] { color: #805914; }
+  dialog { background: #fff; border: 0; border-radius: 12px; padding: 16px; max-width: min(760px, 94vw); }
+  dialog::backdrop { background: #17251ed0; }
+  dialog .top { flex-wrap: nowrap; }
+  #context-name { overflow-wrap: anywhere; }
+  #context-image { display: block; margin: 8px auto; max-width: 100%; max-height: 66vh; }
+  #defect-form { display: grid; gap: 9px; width: min(340px, 78vw); }
+  #defect-form .actions { justify-content: flex-end; }
+  @media (max-width: 650px) { .frame { padding: 10px 12px; } #grid { grid-template-columns: repeat(auto-fill, minmax(138px, 1fr)); } .crop img { height: 112px; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="frame">
+    <div class="top">
+      <div><h1>缺陷候选审核</h1><p id="summary" aria-live="polite"></p></div>
+      <div class="actions"><button id="restore">载入审核 JSON</button><input id="file" type="file" accept="application/json,.json" hidden><button id="download" class="primary">导出审核 JSON</button></div>
+    </div>
+    <div class="controls">
+      <select id="modality" aria-label="模态"><option value="">全部模态</option><option value="visible">可见光</option><option value="infrared">红外</option></select>
+      <select id="split" aria-label="数据划分"><option value="">训练和验证</option><option value="train">训练</option><option value="val">验证</option></select>
+      <select id="status" aria-label="审核状态"><option value="pending">待审核</option><option value="">全部状态</option><option value="non_defect">正常</option><option value="defect">有缺陷</option><option value="missing-label">待补类别</option><option value="uncertain">不确定</option></select>
+      <button id="missing-labels" type="button">待补类别 0 张</button>
+      <input id="search" type="search" placeholder="搜索图片或数据来源" aria-label="搜索图片或数据来源">
+    </div>
+    <div class="actions">
+      <button id="select-all">全选当前结果</button><button id="clear">取消勾选</button>
+      <button data-mark="non_defect" class="primary">标为正常</button><button data-mark="defect">标为有缺陷</button>
+      <button data-mark="uncertain">标为不确定</button><button data-mark="pending">退回待审核</button>
+      <span id="selection" class="helper" aria-live="polite"></span>
+    </div>
+  </div>
+</header>
+<main class="frame">
+  <p class="helper">点缩略图勾选，再批量标记。哪里看不清，就点「看上下文」。</p>
+  <div id="grid"></div>
+  <p id="notice" role="status"></p>
+</main>
+<dialog id="context">
+  <div class="top"><strong id="context-name"></strong><form method="dialog"><button>关闭</button></form></div>
+  <img id="context-image" alt="候选框在原图局部中的位置">
+  <p class="helper">黄框内是送给分类器的候选区域。</p>
+</dialog>
+<dialog id="defect-dialog" aria-labelledby="defect-heading">
+  <form id="defect-form">
+    <strong id="defect-heading">填写缺陷名称</strong>
+    <p id="defect-hint" class="helper"></p>
+    <label for="defect-name">缺陷名称</label>
+    <input id="defect-name" type="text" list="defect-options" placeholder="选择已有类别或输入名称" required autofocus>
+    <datalist id="defect-options"></datalist>
+    <div class="actions"><button type="button" id="defect-cancel">取消</button><button class="primary">保存</button></div>
+  </form>
+</dialog>
+<template id="card-template">
+  <article class="card">
+    <button class="crop" type="button" aria-pressed="false"><img loading="lazy" alt=""><span class="tick" aria-hidden="true"></span></button>
+    <div class="detail"><p class="name"></p><p class="meta"></p><div class="card-actions"><span class="status"></span><button class="see-context">看上下文</button></div></div>
+  </article>
+</template>
+<script id="review-data" type="application/json">{{REVIEW_DATA}}</script>
+<script>
+  const $ = id => document.getElementById(id);
+  const data = JSON.parse($("review-data").textContent);
+  const labels = {pending: "待审核", non_defect: "正常", defect: "有缺陷", uncertain: "不确定"};
+  const key = "candidate-review:" + data.id;
+  const items = data.items;
+  const decisions = new Map();
+  const defectNames = new Map();
+  const selected = new Set();
+  const controls = document.querySelectorAll("[data-mark]");
+  const validStatus = value => Object.hasOwn(labels, value);
+  const statusOf = item => decisions.get(item.record.crop) || item.record.review_status;
+  const nameOf = crop => defectNames.get(crop) || "";
+  const needsLabel = item => statusOf(item) === "defect" && !nameOf(item.record.crop);
+  const cleanName = value => typeof value === "string" ? value.trim() : "";
+  const imageURL = base64 => "data:image/jpeg;base64," + base64;
+  let storageAvailable = true;
+  for (const {record} of items) {
+    const name = cleanName(record.defect_label);
+    if (record.review_status === "defect" && name) defectNames.set(record.crop, name);
+  }
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) || "{}");
+    const statuses = saved.decisions || saved;
+    for (const {record} of items) {
+      if (validStatus(statuses[record.crop])) decisions.set(record.crop, statuses[record.crop]);
+      const name = cleanName(saved.defectNames?.[record.crop]);
+      if (statuses[record.crop] === "defect" && name) defectNames.set(record.crop, name);
+    }
+  } catch { storageAvailable = false; }
+
+  function save() {
+    if (!storageAvailable) return;
+    try { localStorage.setItem(key, JSON.stringify({decisions: Object.fromEntries(decisions), defectNames: Object.fromEntries(defectNames)})); }
+    catch { storageAvailable = false; }
+  }
+
+  function filtered() {
+    const search = $("search").value.trim().toLowerCase();
+    const status = $("status").value;
+    return items.filter(item => {
+      const {record} = item;
+      return (!$("modality").value || $("modality").value === record.modality)
+        && (!$("split").value || $("split").value === record.split)
+        && (!status || (status === "missing-label" ? needsLabel(item) : status === statusOf(item)))
+        && (item.name.toLowerCase().includes(search) || record.dataset.toLowerCase().includes(search));
+    });
+  }
+
+  function update() {
+    const done = items.filter(item => statusOf(item) !== "pending").length;
+    const normals = items.filter(item => statusOf(item) === "non_defect").length;
+    const missing = items.filter(needsLabel).length;
+    $("summary").textContent = `已审核 ${done}/${items.length} · 正常 ${normals}`;
+    $("missing-labels").textContent = `待补类别 ${missing} 张`;
+    $("missing-labels").disabled = !missing;
+    $("selection").textContent = `已勾选 ${selected.size} 张` + (storageAvailable ? "" : " · 请导出 JSON 保存");
+    $("clear").disabled = !selected.size;
+    controls.forEach(button => { button.disabled = !selected.size; });
+  }
+
+  function render() {
+    const fragment = document.createDocumentFragment();
+    const current = filtered();
+    for (const item of current) {
+      const {record, name} = item;
+      const card = $("card-template").content.firstElementChild.cloneNode(true);
+      const crop = card.querySelector(".crop");
+      const tick = card.querySelector(".tick");
+      const selectionChanged = () => {
+        const active = selected.has(record.crop);
+        card.classList.toggle("selected", active);
+        crop.setAttribute("aria-pressed", active);
+        tick.textContent = active ? "✓" : "";
+      };
+      selectionChanged();
+      crop.querySelector("img").src = imageURL(item.thumbnail);
+      crop.setAttribute("aria-label", "勾选 " + name);
+      crop.addEventListener("click", () => {
+        if (selected.has(record.crop)) selected.delete(record.crop);
+        else selected.add(record.crop);
+        selectionChanged();
+        update();
+      });
+      const title = card.querySelector(".name");
+      title.textContent = name;
+      title.title = name;
+      card.querySelector(".meta").textContent = `${record.dataset} · ${record.split === "train" ? "训练" : "验证"} · ${Math.round(record.score * 100)}%`;
+      const badge = card.querySelector(".status");
+      badge.dataset.value = statusOf(item);
+      badge.textContent = statusOf(item) === "defect" ? (nameOf(record.crop) || "有缺陷 · 待填类别") : labels[statusOf(item)];
+      card.querySelector(".see-context").addEventListener("click", () => {
+        $("context-name").textContent = name;
+        $("context-image").src = imageURL(item.context);
+        $("context").showModal();
+      });
+      fragment.append(card);
+    }
+    $("grid").replaceChildren(fragment);
+    $("notice").textContent = current.length ? "" : "此筛选条件下没有候选。";
+    $("select-all").disabled = !current.length;
+    update();
+  }
+
+  for (const id of ["modality", "split", "status", "search"]) $(id).addEventListener("input", () => { selected.clear(); render(); });
+  $("missing-labels").onclick = () => {
+    for (const id of ["modality", "split", "search"]) $(id).value = "";
+    $("status").value = "missing-label";
+    selected.clear();
+    render();
+  };
+  $("select-all").onclick = () => { filtered().forEach(item => selected.add(item.record.crop)); render(); };
+  $("clear").onclick = () => { selected.clear(); render(); };
+  function mark(status, name = "") {
+    selected.forEach(crop => {
+      decisions.set(crop, status);
+      if (name) defectNames.set(crop, name);
+      else defectNames.delete(crop);
+    });
+    selected.clear();
+    save();
+    render();
+  }
+
+  controls.forEach(button => { button.onclick = () => {
+    const status = button.dataset.mark;
+    if (status !== "defect") { mark(status); return; }
+    const current = items.filter(item => selected.has(item.record.crop));
+    const suggested = new Set(current.flatMap(item => data.suggestions[item.record.modality] || []));
+    const options = [...suggested].sort((a, b) => a.localeCompare(b, "zh-CN")).map(name => {
+      const option = document.createElement("option");
+      option.value = name;
+      return option;
+    });
+    $("defect-options").replaceChildren(...options);
+    const names = new Set(current.map(item => nameOf(item.record.crop)));
+    const input = $("defect-name");
+    input.value = names.size === 1 ? [...names][0] : "";
+    input.setCustomValidity("");
+    $("defect-hint").textContent = `本次勾选的 ${current.length} 张候选会使用同一个缺陷名称。`;
+    $("defect-dialog").showModal();
+  }; });
+  $("defect-cancel").onclick = () => $("defect-dialog").close();
+  $("defect-name").oninput = event => event.target.setCustomValidity("");
+  $("defect-form").onsubmit = event => {
+    event.preventDefault();
+    const input = $("defect-name");
+    const name = cleanName(input.value);
+    if (!name) {
+      input.setCustomValidity("请填写缺陷名称");
+      input.reportValidity();
+      return;
+    }
+    $("defect-dialog").close();
+    mark("defect", name);
+  };
+  $("download").onclick = () => {
+    const records = items.map(item => {
+      const {defect_label, ...record} = item.record;
+      record.review_status = statusOf(item);
+      const name = nameOf(record.crop);
+      if (record.review_status === "defect" && name) record.defect_label = name;
+      return record;
+    });
+    const url = URL.createObjectURL(new Blob([JSON.stringify(records, null, 2)], {type: "application/json"}));
+    const download = document.createElement("a");
+    download.href = url;
+    download.download = "review_decisions.json";
+    download.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  $("restore").onclick = () => $("file").click();
+  $("file").onchange = async () => {
+    const file = $("file").files[0];
+    if (!file) return;
+    try {
+      const records = JSON.parse(await file.text());
+      const restored = new Map(records.map(record => [record.crop, record]));
+      if (records.length !== items.length || restored.size !== items.length ||
+          items.some(item => !validStatus(restored.get(item.record.crop)?.review_status))) throw new Error("审核 JSON 与本页的候选不一致");
+      defectNames.clear();
+      restored.forEach((record, crop) => {
+        decisions.set(crop, record.review_status);
+        const name = cleanName(record.defect_label);
+        if (record.review_status === "defect" && name) defectNames.set(crop, name);
+      });
+      selected.clear();
+      save();
+      render();
+    } catch { window.alert("无法载入。请使用从本页导出的审核 JSON。"); }
+    finally { $("file").value = ""; }
+  };
+  render();
+</script>
+</body>
+</html>
